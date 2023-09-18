@@ -23,7 +23,7 @@ const BORDER_VAR = '--tw-grid-inner-border';
  */
 const allItems = ':nth-child(n)';
 
-export default plugin.withOptions(
+export = plugin.withOptions(
   ({ target = 'modern' }: { target?: 'modern' | 'legacy' } = {}) => {
     /**
      * If `target` is set to `'modern'` (default value), returns `selector`
