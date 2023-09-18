@@ -1,6 +1,6 @@
 {
   "name": "@michaelallenwarner/tailwind-grid-inner",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A Tailwind CSS plugin for making grids with inner borders but no outer borders.",
   "main": "./lib/index.js",
   "files": [

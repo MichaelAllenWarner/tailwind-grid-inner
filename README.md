@@ -57,18 +57,21 @@ module.exports = {
 Use the `` `grid-inner-${n}` `` utilities to create inner-border-only grids with `n` equally sized columns. Supported values for `n` are the numbers 1–12, but you can also supply arbitrary values like `grid-inner-[n]` or `grid-inner-[n,m]`, where `n` is still the number of columns and where `m` is the desired border-width in pixels. Finally, there's `grid-inner-none`, which is for "canceling" the inner-grid layout altogether and is meant to be used with responsive variants (more on this [below](#the-none-value)).
 
 ```html
-<!-- grid-wrapper --> 
-<div class="grid-inner-1 sm:grid-inner-[2,4] md:grid-inner-3 lg:grid-inner-none border-red-500 border-solid">
-  <!-- grid-items -->
-  <div></div>
-  <div></div>
-  <div></div>
-  <!-- etc. -->
+<div class="overflow-hidden"><!-- (if overflow is a problem; see notes below) -->
+  <!-- grid-wrapper --> 
+  <div class="grid-inner-1 sm:grid-inner-[2,4] md:grid-inner-3 lg:grid-inner-none border-red-500 border-solid">
+    <!-- grid-items -->
+    <div></div>
+    <div></div>
+    <div></div>
+    <!-- etc. -->
+  </div>
 </div>
 ```
 
 ### Important Notes (Read This!)
 
+- The grid-wrapper gets a bit of negative horizontal `margin`. If this results in overflow/scrollbars, simply wrap the grid-wrapper in an element that has `overflow: hidden`, like in the example above. (This probably won't be necessary unless the grid-wrapper stretches the full width of the screen.)
 - Don't try to set `gap` on the grid-wrapper. Instead, achieve spacing by putting `padding` on (or in) the grid-items.
 - Don't try to set `grid-column` on the grid-items (the Tailwind `col-span-` utilities).
 - Don't try to set any `margin` or `border-width` on either the grid-wrapper or the grid-items.
