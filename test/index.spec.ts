@@ -1,7 +1,11 @@
-import { foo } from '../src';
+import tailwindGridInner from '../src';
 
-describe('foo', () => {
-  it('should return `bar`', () => {
-    expect(foo() === 'bar').toBe(true);
+// TODO: add some real tests!
+
+describe('index', () => {
+  describe('tailwindGridInner', () => {
+    it('should be a function', () => {
+      expect(typeof tailwindGridInner).toBe('function');
+    });
   });
 });
