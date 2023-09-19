@@ -1,5 +1,5 @@
 import plugin from 'tailwindcss/plugin';
-import specificity from 'specificity';
+import * as specificity from 'specificity';
 import { Specificity } from 'specificity/dist/types/types';
 
 const BORDER_CUSTOM_VAR = '--tw-grid-inner-border-custom';
