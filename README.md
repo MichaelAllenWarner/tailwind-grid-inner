@@ -3,11 +3,15 @@
 This Tailwind plugin is for creating CSS grids with "inner" borders only, meaning that each item in the grid gets a border on every side that doesn't touch one of the four sides of the grid-container. If that's confusing, think of a tic-tac-toe board. The plugin results in grid-items of equal width (border-exclusive), and it supports "unbalanced" grids (where there aren't enough items to fill the last row).
 
 - [tailwind-grid-inner](#tailwind-grid-inner)
-  - [Installation](#installation)
   - [Requirements](#requirements)
+  - [Installation](#installation)
   - [Usage](#usage)
     - [Important Notes (Read This!)](#important-notes-read-this)
     - [The `none` value](#the-none-value)
+
+## Requirements
+
+- Tailwind 2.2.0 or higher (but only with [JIT-mode enabled](https://v2.tailwindcss.com/docs/just-in-time-mode#enabling-jit-mode) if using Tailwind 2)
 
 ## Installation
 
@@ -48,10 +52,6 @@ module.exports = {
 ```
 
 (The `target: 'legacy'` option works just as well, but it generates more CSS and makes use of some selectors that have higher specificity.)
-
-## Requirements
-
-- Tailwind 2.2.0 or higher (but only with [JIT-mode enabled](https://v2.tailwindcss.com/docs/just-in-time-mode#enabling-jit-mode) if using Tailwind 2)
 
 ## Usage
 
