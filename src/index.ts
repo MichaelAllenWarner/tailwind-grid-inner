@@ -1,143 +1,115 @@
 import plugin from 'tailwindcss/plugin';
-
-// TODO: make a 1px-border version?
-
-/*
-  Note: would be nice to do an `addComponent()` for a base `grid-inner` class,
-  which would apply styles that make use of CSS variables (with default values),
-  and then use the `matchUtilities()` function to make the `grid-inner-${n}`
-  classes simply update the variable values. However, this doesn't work because
-  we need the column-count to be used inside the pseudo-classes like `:nth-child()`,
-  and CSS variables don't work in selectors. We COULD still do `addComponent()`
-  for some of the other base styles, but if we can't go all the way with it then
-  it seems better to just do it all in `matchUtilities()`, for the sake of simplicity.
-*/
+import specificity from 'specificity';
+import { Specificity } from 'specificity/dist/types/types';
 
 const BORDER_CUSTOM_VAR = '--tw-grid-inner-border-custom';
 const BORDER_VAR = '--tw-grid-inner-border';
 
-/**
- * specificity: 1
- *
- * targets every item in the grid, and used in 'legacy' mode to bump specificity
- */
-const allItems = ':nth-child(n)';
+class Selector {
+  selector: string;
+  specificity: Specificity;
+
+  constructor(selector: string) {
+    this.selector = selector;
+    this.specificity = specificity.calculate(selector);
+  }
+}
+
+/** Abstracted out b/c also used to bump specificity in "legacy" mode */
+const allItemsSelector = ':nth-child(n)';
+
+/** Generates the selectors that need to have their specificity equalized. */
+const getRawSelectors = (cols: `${number}`) => {
+  const lastColsWorthOfItems = `:nth-last-child(-n + ${cols})` as const;
+
+  const allItems = new Selector(allItemsSelector);
+  const firstCol = new Selector(`:nth-child(${cols}n + 1)`);
+  // leave no space around '+' (so that string differs from `firstCol`-string when `cols` is 1)
+  const lastCol = new Selector(`:nth-child(${cols}n+${cols})`);
+  const firstRow = new Selector(`:nth-child(-n + ${cols})`);
+  const firstInLastRow = new Selector(
+    `${firstCol.selector}${lastColsWorthOfItems}`,
+  );
+  const othersInLastRow = new Selector(`${firstInLastRow.selector} ~ *`);
+  const lastIfNotLastCol = new Selector(`:last-child:not(${lastCol.selector})`);
+  const penultimateRowOverhangs = new Selector(
+    `${lastColsWorthOfItems}:not(${firstInLastRow.selector}):not(${othersInLastRow.selector})`,
+  );
+  const penultimateRowOverhangLastCol = new Selector(
+    `${penultimateRowOverhangs.selector}${lastCol.selector}`,
+  );
+
+  return {
+    allItems,
+    firstCol,
+    lastCol,
+    firstRow,
+    firstInLastRow,
+    othersInLastRow,
+    lastIfNotLastCol,
+    penultimateRowOverhangs,
+    penultimateRowOverhangLastCol,
+  };
+};
+
+/** Calculate just once up front, since value will never change. */
+const maxSpecificity = Object.values(getRawSelectors('1'))
+  .map((selector) => selector.specificity)
+  .sort(specificity.compareDesc)[0].B;
 
 export = plugin.withOptions(
   ({ target = 'modern' }: { target?: 'modern' | 'legacy' } = {}) => {
-    /**
-     * If `target` is set to `'modern'` (default value), returns `selector`
-     * wrapped in `:where()`.
-     *
-     * Else (`target` is `'legacy'`), returns `selector` appended with
-     * `num` `':nth-child(n)'` pseudo-classes, which simply boosts the
-     * class-specificity of `selector` by `num`.
-     *
-     * The point is to equalize the specificity of all the rules that
-     * use tree-structural pseudo-classes (like `:nth-child()`), so
-     * that responsive variants like `md:grid-inner-3` work correctly.
-     *
-     * In more detail, the problem is this:
-     *
-     * - On the one hand, we always need to apply special styles to
-     * edge-case items (e.g., the items in the last row), and doing this
-     * requires selectors of varying specificities, some quite high.
-     *
-     * - On the other hand, when the styles for a responsive variant are
-     * applied, what was previously an edge-case item of some kind (say,
-     * an item in the first column) may now be an edge-case item of
-     * a different kind (an item in the last column, maybe), or not an
-     * edge-case item at all. We therefore need to be able to override
-     * every kind of edge-case style from the previous breakpoint with
-     * any styles that are needed for the current breakpoint.
-     *
-     * The solution is to make all the item-rules have the same specificity.
-     * Then within a given `grid-inner` ruleset, rule-ordering alone
-     * determines rule-precedence.
-     */
-    const useWhereOrIncreaseSpecificity = (selector: string, num: number) =>
+    /** Needed to make responsive variants and `none` value work correctly. */
+    const toEqualizedSpecificity =
       target === 'legacy'
-        ? selector + allItems.repeat(num)
-        : `:where(${selector})`;
+        ? (selector: Selector) =>
+            `${allItemsSelector.repeat(
+              maxSpecificity - selector.specificity.B,
+            )}${selector.selector}`
+        : (selector: Selector) => `:where(${selector.selector})`;
+
+    const getEqualizedSelectors = (cols: `${number}`) => {
+      const selectors = getRawSelectors(cols);
+      return Object.fromEntries(
+        Object.entries(selectors).map(([key, selector]) => [
+          key,
+          toEqualizedSpecificity(selector),
+        ]),
+      ) as { [K in keyof typeof selectors]: string };
+    };
 
     return ({ matchUtilities }) => {
       matchUtilities(
         {
           'grid-inner': (value: string) => {
-            /*
-              If supplied value is `'none'`, we do what we can to "cancel" the margin and
-              border stuff that "previous" `grid-inner` rulesets will have included:
-
-              - for WRAPPER, set horizontal-margins to 0px (to override the negative x-margins)
-                - (note: plain mx- classes on wrapper will lose specificity-battle here)
-              - for ITEMS, set margin to 0px, border-width to 0px, border-color to currentcolor,
-                border-style to solid, and remove the `::after` pseudo-element
-                - (note: relevant TW classes will lose specificity-battle here, too)
-
-              We do NOT change the `display` or `gridTemplateColumns` properties
-              of the wrapper. So it'll still have `display: 'grid'` and however many columns
-              were specified at the previous breakpoint. But either of these properties can
-              be changed with a simple TW class on the wrapper.
-            */
-            if (value === 'none') {
-              return {
-                marginLeft: '0px',
-                marginRight: '0px',
-
-                [`& > ${useWhereOrIncreaseSpecificity(allItems, 4)}`]: {
-                  margin: '0px',
-                  borderWidth: '0px',
-                  borderColor: 'currentcolor',
-                  borderStyle: 'solid',
-                  gridColumn: 'auto',
-                  '&::after': {
-                    display: 'none',
-                  },
-                },
-              };
-            }
-
             const [rawCols, rawCustomBorderWidth] = value.split(',');
 
             const customBorderWidth =
               rawCustomBorderWidth && parseInt(rawCustomBorderWidth);
 
             const colsNum = parseInt(rawCols) || 1;
-            const cols = String(colsNum);
+            const cols = `${colsNum}` as const;
 
-            /**
-             * specificity: 1
-             *
-             * "utility" to target the last `cols`-worth of items in the grid
-             */
-            const lastXInGrid = `:nth-last-child(-n + ${cols})` as const;
+            const equalizedSelectors = getEqualizedSelectors(cols);
 
-            /** specificity: 1 */
-            const firstCol = `:nth-child(${cols}n + 1)` as const;
-            /**
-             * specificity: 1
-             *
-             * lack of space around '+' is intentional (ensures this string differs
-             * from `firstCol` string when `cols === 1`, to prevent duplicate keys
-             * in the returned CSS-in-JS object)
-             */
-            const lastCol = `:nth-child(${cols}n+${cols})` as const;
-            /** specificity: 1 */
-            const firstRow = `:nth-child(-n + ${cols})` as const;
-            /** specificity: 2 */
-            const firstInLastRow = `${firstCol}${lastXInGrid}` as const;
-            /** specificity: 2 */
-            const othersInLastRow = `${firstInLastRow} ~ *` as const;
+            if (value === 'none') {
+              return {
+                marginLeft: '0px',
+                marginRight: '0px',
 
-            /** specificity: 2 */
-            const lastIfNotLastCol = `:last-child:not(${lastCol})` as const;
-            /** specificity: 5 */
-            const penultimateRowOverhangs =
-              `${lastXInGrid}:not(${firstInLastRow}):not(${othersInLastRow})` as const;
-
-            /** specificity: 6 */
-            const penultimateRowOverhangLastCol =
-              `${penultimateRowOverhangs}${lastCol}` as const;
+                [`& > ${equalizedSelectors.allItems}`]: {
+                  margin: '0px',
+                  borderWidth: '0px',
+                  borderColor: 'currentcolor',
+                  borderStyle: 'solid',
+                  gridColumn: 'auto',
+                  position: 'static',
+                  '&::after': {
+                    display: 'none',
+                  },
+                },
+              };
+            }
 
             return {
               ...(customBorderWidth
@@ -154,49 +126,40 @@ export = plugin.withOptions(
               marginLeft: `calc(var(${BORDER_VAR})/-2)`,
               marginRight: `calc(var(${BORDER_VAR})/-2)`,
 
-              // For all items: apply 1/2-width borders, inherit border-color, and zero margins.
-              [`& > ${useWhereOrIncreaseSpecificity(allItems, 5)}`]: {
+              [`& > ${equalizedSelectors.allItems}`]: {
                 margin: '0px',
                 borderWidth: `calc(var(${BORDER_VAR}) / 2)`,
                 borderColor: 'inherit',
                 borderStyle: 'inherit',
                 gridColumn: 'span 1 / span 1',
+                position: 'static',
                 '&::after': {
                   display: 'none',
                 },
               },
 
-              // Remove top-borders from first row.
-              [`& > ${useWhereOrIncreaseSpecificity(firstRow, 5)}`]: {
+              [`& > ${equalizedSelectors.firstRow}`]: {
                 borderTopWidth: '0px',
               },
 
-              // Remove bottom-border from first item in last row...
-              [`& > ${useWhereOrIncreaseSpecificity(firstInLastRow, 4)}`]: {
+              [`& > ${equalizedSelectors.firstInLastRow}`]: {
                 borderBottomWidth: '0px',
               },
-              // ...and then also from the rest of the last row.
-              [`& > ${useWhereOrIncreaseSpecificity(othersInLastRow, 4)}`]: {
+              [`& > ${equalizedSelectors.othersInLastRow}`]: {
                 borderBottomWidth: '0px',
               },
 
-              // Remove left-borders from first column.
-              [`& > ${useWhereOrIncreaseSpecificity(firstCol, 5)}`]: {
+              [`& > ${equalizedSelectors.firstCol}`]: {
                 borderLeftWidth: '0px',
                 marginLeft: `calc(var(${BORDER_VAR})/2)`,
               },
 
-              // Remove right-borders from last column.
-              [`& > ${useWhereOrIncreaseSpecificity(lastCol, 5)}`]: {
+              [`& > ${equalizedSelectors.lastCol}`]: {
                 borderRightWidth: '0px',
                 marginRight: `calc(var(${BORDER_VAR})/2)`,
               },
 
-              /*
-                For last-child (if not in last column), use an `::after`
-                pseudo-element to "double" the right-border.
-              */
-              [`& > ${useWhereOrIncreaseSpecificity(lastIfNotLastCol, 4)}`]: {
+              [`& > ${equalizedSelectors.lastIfNotLastCol}`]: {
                 position: 'relative',
                 '&::after': {
                   content: "''",
@@ -211,14 +174,7 @@ export = plugin.withOptions(
                 },
               },
 
-              /*
-                For items in second-to-last row with no item directly below,
-                use an `::after` pseudo-element to "double" the bottom-border.
-              */
-              [`& > ${useWhereOrIncreaseSpecificity(
-                penultimateRowOverhangs,
-                1,
-              )}`]: {
+              [`& > ${equalizedSelectors.penultimateRowOverhangs}`]: {
                 position: 'relative',
 
                 '&::after': {
@@ -234,14 +190,7 @@ export = plugin.withOptions(
                 },
               },
 
-              /*
-                For LAST in second-to-last row with no item directly below,
-                correct the `right` value of the `::after` pseudo-element
-              */
-              [`& > ${useWhereOrIncreaseSpecificity(
-                penultimateRowOverhangLastCol,
-                0,
-              )}`]: {
+              [`& > ${equalizedSelectors.penultimateRowOverhangLastCol}`]: {
                 '&::after': {
                   right: '0',
                 },
